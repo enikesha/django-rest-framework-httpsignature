@@ -6,11 +6,18 @@ import re
 
 class SignatureAuthentication(authentication.BaseAuthentication):
 
+    SIGNATURE_KEYID_RE = re.compile('keyId="(.+?)"')
     SIGNATURE_RE = re.compile('signature="(.+?)"')
     SIGNATURE_HEADERS_RE = re.compile('headers="([\(\)\sa-z0-9-]+?)"')
 
-    API_KEY_HEADER = 'X-Api-Key'
     ALGORITHM = 'hmac-sha256'
+
+    def get_keyid_from_signature_string(self, signature):
+        """Return the key id from the signature header or None."""
+        match = self.SIGNATURE_KEYID_RE.search(signature)
+        if not match:
+            return None
+        return match.group(1)
 
     def get_signature_from_signature_string(self, signature):
         """Return the signature from the signature header or None."""
@@ -75,17 +82,12 @@ class SignatureAuthentication(authentication.BaseAuthentication):
         return None
 
     def authenticate(self, request):
-        # Check for API key header.
-        api_key_header = self.header_canonical(self.API_KEY_HEADER)
-        api_key = request.META.get(api_key_header)
-        if not api_key:
-            return None
-
         # Check if request has a "Signature" request header.
         authorization_header = self.header_canonical('Authorization')
         sent_string = request.META.get(authorization_header)
-        if not sent_string:
-            raise exceptions.AuthenticationFailed('No signature provided')
+        api_key = self.get_keyid_from_signature_string(sent_string or '')
+        if not api_key:
+            return None
         sent_signature = self.get_signature_from_signature_string(sent_string)
 
         # Fetch credentials for API key from the data store.
